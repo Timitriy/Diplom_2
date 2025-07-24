@@ -1,52 +1,57 @@
 import pytest
 import requests
 import random
+from http import HTTPStatus
 
+# Базовый URL и эндпоинты
 BASE_URL = "https://stellarburgers.nomoreparties.site/api"
+ENDPOINTS = {
+    "REGISTER": "/auth/register",
+    "LOGIN": "/auth/login",
+    "USER": "/auth/user",
+    "INGREDIENTS": "/ingredients",
+    "ORDERS": "/orders"
+}
+
+# Сообщения ошибок / статусы
+ERR_NO_INGREDIENTS = "Ingredient ids must be provided"
+ERR_USER_EXISTS = "User already exists"
+ERR_REQUIRED_FIELDS = "Email, password and name are required fields"
+ERR_UNAUTHORIZED = "You should be authorised"
+ERR_WRONG_CREDENTIALS = "email or password are incorrect"
 
 
 @pytest.fixture
 def registered_user():
+    """Регистрирует нового пользователя и возвращает его данные."""
     email = f"test_{random.randint(1000, 9999)}@example.com"
     password = "password123"
     name = "Test User"
 
-    payload = {
-        "email": email,
-        "password": password,
-        "name": name
-    }
+    payload = {"email": email, "password": password, "name": name}
+    response = requests.post(f"{BASE_URL}{ENDPOINTS['REGISTER']}", json=payload)
 
-    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
+    if response.status_code == HTTPStatus.FORBIDDEN:
+        pytest.skip("User already exists, skipping registration fixture")
 
-    if response.status_code == 403:
-        pytest.skip("User already exists")
-
-    return {
-        "email": email,
-        "password": password,
-        "name": name
-    }
+    assert response.status_code == HTTPStatus.OK
+    return {"email": email, "password": password, "name": name}
 
 
 @pytest.fixture
 def authorized_user(registered_user):
-    payload = {
-        "email": registered_user["email"],
-        "password": registered_user["password"]
-    }
-    response = requests.post(f"{BASE_URL}/auth/login", json=payload)
-    assert response.status_code == 200
-
-    return {
-        "email": registered_user["email"],
-        "token": response.json()["accessToken"]
-    }
+    """Логинится зарегистрированным пользователем и возвращает токен."""
+    payload = {"email": registered_user["email"], "password": registered_user["password"]}
+    response = requests.post(f"{BASE_URL}{ENDPOINTS['LOGIN']}", json=payload)
+    assert response.status_code == HTTPStatus.OK
+    token = response.json()["accessToken"]
+    return {"email": registered_user["email"], "token": token}
 
 
 @pytest.fixture
 def valid_ingredients():
-    response = requests.get(f"{BASE_URL}/ingredients")
-    assert response.status_code == 200
-    ingredients = response.json()["data"]
-    return [ingredients[0]["_id"], ingredients[1]["_id"]]
+    """Возвращает список валидных ID ингредиентов (первые два)."""
+    response = requests.get(f"{BASE_URL}{ENDPOINTS['INGREDIENTS']}")
+    assert response.status_code == HTTPStatus.OK
+    data = response.json()["data"]
+    return [data[0]["_id"], data[1]["_id"]]
